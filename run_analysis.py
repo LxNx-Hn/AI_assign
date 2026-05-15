@@ -322,6 +322,12 @@ for d in DISTRICTS:
     for h in range(FORECAST_HORIZON):
         da_vals.append(np.mean(np.sign(actuals_wf[:,h]-last_wf)==np.sign(preds_wf[:,h]-last_wf)))
     da_arima = float(np.mean(da_vals)*100)
+    # ── H+3 전용 지표 (주평가 기준) ──────────────────────────────────────────
+    y_h3 = actuals_wf[:, -1]   # 실제 t+3
+    p_h3 = preds_wf[:, -1]     # 예측 t+3
+    rmse_h3 = float(np.sqrt(mean_squared_error(y_h3, p_h3)))
+    mae_h3  = float(mean_absolute_error(y_h3, p_h3))
+    da_h3   = float(np.mean(np.sign(y_h3 - last_wf) == np.sign(p_h3 - last_wf)) * 100)
     # 미래 예측 (전체 데이터 학습 후)
     future = ARIMA(series, order=best_order).fit().forecast(steps=FORECAST_HORIZON)
     arima_results[d] = {
@@ -332,9 +338,12 @@ for d in DISTRICTS:
         'smape': float(np.mean(2*np.abs(yf_all-pf_all)/(np.abs(yf_all)+np.abs(pf_all)+1e-8))*100),
         'r2':    float(r2_score(yf_all, pf_all)),
         'da':    da_arima,
+        'rmse_h3': rmse_h3,
+        'mae_h3':  mae_h3,
+        'da_h3':   da_h3,
         'future':future,
     }
-    print(f'  {d}: ARIMA{best_order}  RMSE={arima_results[d]["rmse"]:.4f}  MAPE={arima_results[d]["mape"]:.2f}%  DA={da_arima:.1f}%')
+    print(f'  {d}: ARIMA{best_order}  RMSE={arima_results[d]["rmse"]:.4f}  RMSE_H3={rmse_h3:.4f}  DA_H3={da_h3:.1f}%')
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. 딥러닝 모델
@@ -452,11 +461,15 @@ def eval_model(model, Xte, yte):
     for i, d in enumerate(DISTRICTS):
         pf, yf = po[:,:,i].flatten(), yo[:,:,i].flatten()
         m = _metrics(yf, pf, yo_3d=yo, po_3d=po, dist_i=i, last_known=last_known)
-        # ── horizon별 개별 R²·RMSE 추가 ─────────────────────────────────────
+        # ── horizon별 개별 R²·RMSE·MAE·DA 추가 ──────────────────────────────
+        lk_col = last_known[:, i]
         for h in range(FORECAST_HORIZON):
             yh = yo[:, h, i]; ph = po[:, h, i]
             m[f'R2_h{h+1}']   = round(float(r2_score(yh, ph)), 4)
             m[f'RMSE_h{h+1}'] = round(float(np.sqrt(mean_squared_error(yh, ph))), 4)
+            m[f'MAE_h{h+1}']  = round(float(mean_absolute_error(yh, ph)), 4)
+            da_h = float(np.mean(np.sign(yh - lk_col) == np.sign(ph - lk_col)) * 100)
+            m[f'DA_h{h+1}']   = round(da_h, 2)
         metrics[d] = m
     return metrics
 
@@ -492,33 +505,46 @@ plt.tight_layout(); plt.savefig('output/fig_06_loss_curves.png',bbox_inches='tig
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. 평가 비교 & 최종 예측
 # ─────────────────────────────────────────────────────────────────────────────
-print('\n=== 7. 모델 평가 비교 ===')
+print('\n=== 7. 모델 평가 비교 (H+3 기준) ===')
 arima_metrics={d:{'RMSE':round(arima_results[d]['rmse'],4),
                   'MAE': round(arima_results[d]['mae'],4),
                   'MAPE':round(arima_results[d]['mape'],2),
                   'SMAPE':round(arima_results[d]['smape'],2),
                   'R2':  round(arima_results[d]['r2'],4),
-                  'DA':  round(arima_results[d]['da'],2)} for d in DISTRICTS}
+                  'DA':  round(arima_results[d]['da'],2),
+                  'RMSE_h3': round(arima_results[d]['rmse_h3'],4),
+                  'MAE_h3':  round(arima_results[d]['mae_h3'],4),
+                  'DA_h3':   round(arima_results[d]['da_h3'],2)} for d in DISTRICTS}
 all_metrics['ARIMA']=arima_metrics
 rows=[]
 for mn,dm in all_metrics.items():
     for d,m in dm.items():
-        rows.append({'모델':mn,'구':d,'RMSE':m['RMSE'],'MAE':m['MAE'],
-                     'MAPE(%)':m['MAPE'],'SMAPE(%)':m['SMAPE'],'R2':m['R2'],'DA(%)':m['DA']})
+        rows.append({'모델':mn,'구':d,
+                     'H3_RMSE':m.get('RMSE_h3',m['RMSE']),
+                     'H3_MAE': m.get('MAE_h3', m['MAE']),
+                     'H3_DA':  m.get('DA_h3',  m['DA']),
+                     'RMSE':m['RMSE'],'MAE':m['MAE'],'DA(%)':m['DA']})
 cmp_df=pd.DataFrame(rows)
-avg_df=cmp_df.groupby('모델')[['RMSE','MAE','MAPE(%)','SMAPE(%)','R2','DA(%)']].mean().round(4)
+avg_df=cmp_df.groupby('모델')[['H3_RMSE','H3_MAE','H3_DA','RMSE','MAE','DA(%)']].mean().round(4)
 avg_df.to_csv('output/model_comparison.csv',encoding='utf-8-sig')
-print(avg_df.sort_values('RMSE').to_string())
+print(avg_df.sort_values('H3_RMSE').to_string())
 
-nn_avg={k:np.mean([m['RMSE'] for m in v.values()]) for k,v in all_metrics.items() if k!='ARIMA'}
-nn_da ={k:np.mean([m['DA']   for m in v.values()]) for k,v in all_metrics.items() if k!='ARIMA'}
-# 선택 기준: 최소 RMSE 기준 10% 이내 후보 중 DA 최대 (균형성 우선)
-best_rmse_val=min(nn_avg.values())
-candidates={k:v for k,v in nn_avg.items() if v<=best_rmse_val*1.10}
-best_name=max(candidates,key=lambda x:nn_da[x])
-best_model=trained_models[best_name]
-print(f'\n최적 모델: {best_name}  (평균 RMSE={nn_avg[best_name]:.4f}  평균 DA={nn_da[best_name]:.1f}%)')
-print(f'  ※ RMSE 상위 10% 이내 후보: {list(candidates.keys())} → DA 최대 모델 선택')
+# ── H+3 RMSE 기준 전체 모델(ARIMA 포함) 최우수 선정 ──────────────────────────
+h3_rmse_all = {mn: np.mean([all_metrics[mn][d].get('RMSE_h3', all_metrics[mn][d]['RMSE'])
+                             for d in DISTRICTS]) for mn in all_metrics}
+h3_mae_all  = {mn: np.mean([all_metrics[mn][d].get('MAE_h3',  all_metrics[mn][d]['MAE'])
+                             for d in DISTRICTS]) for mn in all_metrics}
+h3_da_all   = {mn: np.mean([all_metrics[mn][d].get('DA_h3',   all_metrics[mn][d]['DA'])
+                             for d in DISTRICTS]) for mn in all_metrics}
+best_name = min(h3_rmse_all, key=h3_rmse_all.get)
+# NN 시각화용: H+3 RMSE 기준 최우수 NN
+best_nn_name = min({k:v for k,v in h3_rmse_all.items() if k!='ARIMA'}, key=lambda x: h3_rmse_all[x])
+best_model = trained_models[best_nn_name]
+print(f'\n[H+3 RMSE 기준 모델 순위]')
+for mn in sorted(h3_rmse_all, key=h3_rmse_all.get):
+    print(f'  {mn}: H3_RMSE={h3_rmse_all[mn]:.4f}  H3_MAE={h3_mae_all[mn]:.4f}  H3_DA={h3_da_all[mn]:.1f}%')
+print(f'\n최종 채택 모델: {best_name}  (H+3 RMSE={h3_rmse_all[best_name]:.4f})')
+print(f'  시각화 기준 NN: {best_nn_name}')
 
 # 최종 예측: 차분 예측 → 마지막 실제값 + 누적 차분 = 절대 지수
 last_win    = feat_df.values[-SEQ_LEN:].astype(np.float32)
@@ -570,8 +596,8 @@ for i,d in enumerate(DISTRICTS):
     ax.grid(True,alpha=0.3); ax.xaxis.set_major_formatter(mdates.DateFormatter('%y.%m'))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
     plt.setp(ax.get_xticklabels(),rotation=30,fontsize=8); ax.set_ylabel('가격지수')
-plt.suptitle(f'{best_name} — 훈련/테스트/예측 (목표: 2026-05-25)',fontsize=14,fontweight='bold')
-plt.tight_layout(); plt.savefig(f'output/fig_07_final_{best_name}.png',bbox_inches='tight'); plt.close()
+plt.suptitle(f'{best_nn_name} — 훈련/테스트/예측 (목표: 2026-05-25)',fontsize=14,fontweight='bold')
+plt.tight_layout(); plt.savefig(f'output/fig_07_final_{best_nn_name}.png',bbox_inches='tight'); plt.close()
 print(f'\n  → fig_07 저장')
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -586,10 +612,13 @@ arima_param_avg = round(np.mean([o[0]+o[2]+1 for o in arima_orders.values()]),1)
 
 results = {
     'best_model': best_name,
+    'best_nn_model': best_nn_name,
     'seq_len': SEQ_LEN,
     'forecast_horizon': FORECAST_HORIZON,
     'test_period': f'{df.index[split_idx].date()} ~ {df.index[-1].date()}',
-    'nn_avg_rmse':   {k: round(v,4) for k,v in nn_avg.items()},
+    'h3_rmse': {mn: round(h3_rmse_all[mn],4) for mn in h3_rmse_all},
+    'h3_mae':  {mn: round(h3_mae_all[mn],4)  for mn in h3_mae_all},
+    'h3_da':   {mn: round(h3_da_all[mn],2)   for mn in h3_da_all},
     'arima_avg_rmse':round(float(np.mean([v['rmse']  for v in arima_results.values()])),4),
     'arima_avg_da':  round(float(np.mean([v['da']    for v in arima_results.values()])),2),
     'arima_avg_r2':  round(float(np.mean([v['r2']    for v in arima_results.values()])),4),
@@ -602,6 +631,10 @@ results = {
     'arima_param_avg': arima_param_avg,
     'arima_orders': {d: list(arima_orders[d]) for d in DISTRICTS},
     'forecast_2026_05_25': {d: round(float(forecast_df.iloc[2][d]),3) for d in DISTRICTS},
+    'arima_forecast_all': {
+        str(dt.date()): {d: round(float(arima_fc.loc[dt,d]),3) for d in DISTRICTS}
+        for dt in arima_fc.index
+    },
     'forecast_all': {
         str(dt.date()): {d: round(float(forecast_df.loc[dt,d]),3) for d in DISTRICTS}
         for dt in forecast_df.index
