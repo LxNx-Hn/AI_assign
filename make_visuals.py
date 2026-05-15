@@ -44,12 +44,10 @@ for i, d in enumerate(DISTRICTS):
     alpha = 1.0 if d in ['강남구','노원구'] else 0.6
     ax.plot(df.index, df[d], color=COLORS[i], linewidth=lw, alpha=alpha, label=d)
 
-# 이벤트 화살표
+# 이벤트 화살표 (금리 수치 단정 제거 — 배경 참고용만 표시)
 events = [
-    ('2022-01-14', '금리 인상\n시작', 0.96, 'top'),
-    ('2022-07-01', '금리\n2.5%', 0.85, 'top'),
-    ('2023-01-13', '금리\n3.5%\n(최고)', 0.72, 'top'),
-    ('2024-03-01', '금리\n인하 기대', 0.28, 'bottom'),
+    ('2022-01-14', '금리 인상기\n(배경 참고)', 0.93, 'top'),
+    ('2024-03-01', '금리 인하\n기대', 0.18, 'bottom'),
 ]
 ymin, ymax = ax.get_ylim()
 yrange = ymax - ymin
@@ -62,17 +60,18 @@ for edate, label, ypos, side in events:
             color='#333333',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.8))
 
-# 체제 라벨
+# 체제 라벨 (보고서 본문 용어와 통일)
 ax.text(pd.Timestamp('2021-09-01'), ax.get_ylim()[1]*0.99,
-        '① 급등기', ha='center', fontsize=11, fontweight='bold', color='#CC7700', va='top')
+        '① COVID 이후\n급등기', ha='center', fontsize=10, fontweight='bold', color='#CC7700', va='top')
 ax.text(pd.Timestamp('2023-03-01'), ax.get_ylim()[1]*0.99,
-        '② 급락기', ha='center', fontsize=11, fontweight='bold', color='#CC0000', va='top')
+        '② 금리인상\n하락기', ha='center', fontsize=10, fontweight='bold', color='#CC0000', va='top')
 ax.text(pd.Timestamp('2025-03-01'), ax.get_ylim()[1]*0.99,
-        '③ 회복기', ha='center', fontsize=11, fontweight='bold', color='#007700', va='top')
+        '③ 회복기', ha='center', fontsize=10, fontweight='bold', color='#007700', va='top')
 
 ax.legend(loc='lower left', fontsize=9, ncol=3, framealpha=0.9)
 ax.set_ylabel('매매가격지수', fontsize=11)
-ax.set_title('서울 6개 구 아파트 매매가격지수 (2021~2026) — 급등·급락·회복', fontsize=13, fontweight='bold', pad=12)
+ax.set_title('서울 6개 구 아파트 매매가격지수 추이 — COVID 이후 급등·금리인상 하락·회복',
+             fontsize=13, fontweight='bold', pad=12)
 ax.grid(True, alpha=0.25, linestyle='-')
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y.%m'))
 ax.xaxis.set_major_locator(mdates.MonthLocator(interval=4))

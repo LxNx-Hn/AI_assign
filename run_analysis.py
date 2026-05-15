@@ -630,16 +630,17 @@ results = {
     'model_params': model_params,
     'arima_param_avg': arima_param_avg,
     'arima_orders': {d: list(arima_orders[d]) for d in DISTRICTS},
-    'forecast_2026_05_25': {d: round(float(forecast_df.iloc[2][d]),3) for d in DISTRICTS},
+    'simple_rnn_forecast_2026_05_25': {d: round(float(forecast_df.iloc[2][d]),3) for d in DISTRICTS},
     'arima_forecast_all': {
         str(dt.date()): {d: round(float(arima_fc.loc[dt,d]),3) for d in DISTRICTS}
         for dt in arima_fc.index
     },
-    'forecast_all': {
+    'simple_rnn_forecast_all': {
         str(dt.date()): {d: round(float(forecast_df.loc[dt,d]),3) for d in DISTRICTS}
         for dt in forecast_df.index
     },
     'arima_forecast_2026_05_25': {d: round(float(arima_fc.iloc[2][d]),3) for d in DISTRICTS},
+    'final_forecast_2026_05_25': {d: round(float(arima_fc.iloc[2][d]),3) for d in DISTRICTS},  # 최종 채택: ARIMA
     'event_changes': event_changes,
     'dominant_periods': dominant_periods,
     'adf_1st_diff': {d: {'p_value': round(float(adfuller(df[d].diff().dropna(),autolag='AIC')[1]),4)}
@@ -651,6 +652,8 @@ with open('output/results.json','w',encoding='utf-8') as f:
 print('\n' + '='*60)
 print('분석 완료! output/ 폴더 확인')
 print(f'최적 모델: {best_name}')
-print('\n▶ 2026-05-25 예측 ('+best_name+'):')
-for d in DISTRICTS: print(f'  {d:<7}: {results["forecast_2026_05_25"][d]:.3f}')
+print('\n▶ 2026-05-25 최종 예측 (ARIMA — final_forecast_2026_05_25):')
+for d in DISTRICTS: print(f'  {d:<7}: {results["final_forecast_2026_05_25"][d]:.3f}')
+print('\n▶ 2026-05-25 참고 예측 (best NN = '+best_nn_name+' — simple_rnn_forecast_2026_05_25):')
+for d in DISTRICTS: print(f'  {d:<7}: {results["simple_rnn_forecast_2026_05_25"][d]:.3f}')
 print('='*60)
